@@ -1,2 +1,2 @@
-# PH125.9Capston
+# PH125.9Capstone
 HarvardX Data Science Capstone
