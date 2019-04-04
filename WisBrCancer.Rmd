@@ -1,0 +1,206 @@
+---
+title: "Wisconsin Breast Cancer Diagnosis Model"
+author: "Charles Aldrich"
+date: "April 2, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Overview
+
+The purpose of this machine learning project is to build a breast cancer diagnostic model based on analysis of the University of Wisconsin's Breast Cancer (Diagnostic) dataset.  The dataset is a collection of features computed from digitized images of a fine needle aspirate(FNA) of breast mass.  These features describe the cell nuclei captured in the image.   The diagnostic machine learning model's goal is to predict the mass as benign or malignant.   The dataset was split into test and train datasets with the best model selected based on accuracy. 
+
+Attribute information in the dataset as described at https://www.kaggle.com/uciml/breast-cancer-wisconsin-data:
+
+
+1) ID number 2) Diagnosis (M = malignant, B = benign) 3-32) 
+
+Ten real-valued features are computed for each cell nucleus: 
+a) radius (mean of distances from center to points on the perimeter) 
+b) texture (standard deviation of gray-scale values) 
+c) perimeter 
+d) area 
+e) smoothness (local variation in radius lengths) 
+f) compactness (perimeter^2 / area - 1.0) 
+g) concavity (severity of concave portions of the contour) 
+h) concave points (number of concave portions of the contour) 
+i) symmetry 
+j) fractal dimension ("coastline approximation" - 1)
+
+The mean, standard error and "worst" or largest (mean of the three largest values) of these features were computed for each image, resulting in 30 features. For instance, field 3 is Mean Radius, field 13 is Radius SE, field 23 is Worst Radius.
+
+All feature values are recoded with four significant digits.
+
+Missing attribute values: none
+
+Class distribution: 357 benign, 212 malignant
+
+NOTE: The class distribution is not balanced.  When comparing model results, 'Balanced Accuracy' calculations are used to compensate for the significantly large majority of benign class instances.
+
+## Pre-Processing
+
+During Pre-Processing,   NULLs were checked and removed,  the id column was removed,  and the Caret library zero variance check function was run against the predictors to scan for non-descriptive features.   No non-variant features were identified by the zero variance check function:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+#libraries
+library(tidyverse)
+library(ggcorrplot)
+library(caret)
+library(factoextra)
+#load data into vector
+wbrc <- read.csv("./data.csv", header = T, stringsAsFactors = F)
+
+#remove nulls
+
+wbrc$X <- NULL
+
+#remove id col
+wbrc <- wbrc[,-1]
+wbrc$diagnosis <- as.factor(wbrc$diagnosis)
+
+# near zero variance check on predictors
+nzv <- nearZeroVar(wbrc[,-1])
+nzv
+```
+
+
+
+## Analysis
+
+Dataset Structure:
+
+```{r echo=FALSE, message=FALSE}
+#review data summaries, commented out for RMD report.  STR() displayed in Overview
+
+str(wbrc)
+
+```
+
+Dataset Summary Statistics:
+
+```{r echo=FALSE, message=FALSE}
+#review data summaries, commented out for RMD report.  STR() displayed in Overview
+
+summary(wbrc)
+
+```
+
+Features were analyzed for correlations.   Plots were split by type of feature (mean, sd, or 'worst') to improve visual.  Insignifcant features were removed from the triangle matrix.  Some correlations are expected due to geometry (i.e. radius and area).  Of interest are correlations of concavity and compactness across the four plots.
+
+```{r echo=FALSE, message=FALSE}
+
+#analyze correlations for all 
+
+wbrc_corall <- cor(wbrc[,-1])
+p.matall <- cor_pmat(wbrc_corall)
+ggcorrplot(wbrc_corall, p.mat = p.matall, hc.order = TRUE, type = "lower", insig = "blank", title = "All Breast Cancer Features")
+
+# analyze correlations separately for all, mean, sd, and worst columns to improve visual
+
+#mean
+wbrc_cormean <- cor(wbrc[,c(2:11)])
+p.matmean <- cor_pmat(wbrc_cormean)
+ggcorrplot(wbrc_cormean, p.mat = p.matmean, hc.order = TRUE, type = "lower", insig = "blank", title = "Mean Features")
+#sd
+wbrc_corsd <- cor(wbrc[,c(12:21)])
+p.matsd <- cor_pmat(wbrc_corsd)
+ggcorrplot(wbrc_corsd, p.mat= p.matsd, hc.order = TRUE, type = "lower", insig = "blank", title = "Std. Dev. Features")
+#worst
+wbrc_corworst <- cor(wbrc[,c(22:31)])
+p.matworst <- cor_pmat(wbrc_corworst)
+ggcorrplot(wbrc_corworst, p.mat = p.matworst, hc.order = TRUE, type = "lower", insig = "blank", title = "'Worst' Features")
+```
+
+
+## Modeling
+
+The dataset was split into train and test datasets with a 60/40 ratio.  Train and Test dataset diagnosis (B/M) column proportions were approximately equal.   However the B and M class ratio is not balanced.
+```{r echo=FALSE, message=FALSE}
+
+# test set will be 40% of Wisconsin Breast Cancer (wbrc) data
+set.seed(1)
+test_index <- createDataPartition(y = wbrc$diagnosis, times = 1, p = 0.4, list = FALSE)
+train <- wbrc[-test_index,]
+#train$diagnosis <- as.factor(train$diagnosis)
+test <- wbrc[test_index,]
+#test$diagnosis <- as.factor(test$diagnosis)
+
+#check proportion of benign/malignant diagnosis in train/test sets
+
+prop.table(table(train$diagnosis))
+prop.table(table(test$diagnosis))
+
+```
+
+The following models were evaluated in order of increasing Balanced Accuracy.   A Confusion Matrix (cm function) was used to rely on the function's calculation of Balanced Accuracy.   Balanced Accuracy was chosen as the deciding metric vs simple Accuracy given Benign (B) class instances greatly outnumber Malignant (M) instances in the dataset.
+
+1.  Decision Tree (rpart)
+2.  Random Forest
+3.  SVM Linear
+4.  SVM Radial
+
+
+Confusion Matrix for Decision Tree (rpart):
+
+```{r echo=FALSE, message=FALSE}
+
+# using rpart for decision trees
+library(rpart)
+fit_rp <- rpart(diagnosis~.,data=train,control=rpart.control(minsplit=2))
+predict_rp <- predict(fit_rp, test[,-1], type="class")
+cm_rp  <- confusionMatrix(predict_rp, test$diagnosis)   
+cm_rp
+```
+
+
+Confusion Matrix for Random Forest shows a significant bump in Balanced Accuracy to over .95:
+
+```{r echo=FALSE, message=FALSE}
+#  using randomforest
+library(randomForest)
+fit_rf <- randomForest(diagnosis~., data=train, proximity=TRUE, importance=TRUE)
+predict_rf   <- predict(fit_rf, test[,-1])
+cm_rf    <- confusionMatrix(predict_rf, test$diagnosis)
+cm_rf
+```
+
+Confusion Matrix for SVM Linear increases Balanced Accuracy just slightly:
+
+```{r echo=FALSE, message=FALSE}
+# using SVM,  method="svmLinear"
+fit_svm <- train(method="svmLinear", diagnosis~., data=train)
+predict_svm <- predict(fit_svm, test[,-1])
+cm_svm <- confusionMatrix(predict_svm, test$diagnosis)
+cm_svm
+```
+
+Confusion Matrix for SVM Radial gives another bump to Balanced Accuracy to over .97.  This reflects how the dataset predictors better fit a non-linear SVM model prividing for 3 more accurate predictions and accurately predicts *all* Benign tumors!
+
+```{r echo=FALSE, message=FALSE}
+# using SVM, method="svmRadial"
+fit_svm_Rad <- train(method="svmRadial", diagnosis~., data=train)
+predict_svm_Rad <- predict(fit_svm_Rad, test[,-1])
+cm_svm_Rad <- confusionMatrix(predict_svm_Rad, test$diagnosis)
+cm_svm_Rad
+
+```
+
+
+## Conclusion
+
+The Balanced Accuracy for a SVM Radial model against the entire Wisconsion Breast Cancer (Diagnosis) dataset is over .98:
+
+```{r echo=FALSE, message=FALSE}
+#  full dataset prediciton with svmRadial as the best model based on Overall Accuracy.
+
+predict_svm_Radial_wbrc <- predict(fit_svm_Rad, wbrc[,-1])
+cm_svm_Radial_wbrc <- confusionMatrix(predict_svm_Radial_wbrc, wbrc$diagnosis)
+cm_svm_Radial_wbrc
+```
+
+Like during testing,   all benign (B) tumors were accurately predicted using the SVM Radial model. SVM Radial was over 96% accurate in identifying malignant (M) tumors,  204 out of 212 malignancies were predicted.
+
